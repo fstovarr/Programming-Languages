@@ -1,6 +1,6 @@
 reserved: "and|archivo|caso|const|constantes|desde|eval|fin|hasta|inicio|
     imprimir|leer|lib|libext|matriz|mientras|not|numerico|or|paso|subrutina|
-    programa|ref|registro|repetir|retorna|si|sino|tipos|var|variables|vector";
+    programa|ref|registro|repetir|retorna|si|sin|sino|tipos|var|variables|vector";
 
 id: "[A-Za-zñÑ_](?:\w|ñ|Ñ|_){0,31}";
 number: "[+-]?[0-9]+(?:.[0-9]+)?";
@@ -13,12 +13,12 @@ tk_div:         "/";
 tk_mod:         "%";
 tk_pow:         "\^";
 
-tk_less:        "<";
 tk_leq:         "<=";
-tk_greater:     ">";
 tk_geq:         ">=";
-tk_equal:       "==";
 tk_neq:         "<>";
+tk_greater:     ">";
+tk_equal:       "==";
+tk_less:        "<";
 
 tk_point:       "\.";
 tk_comma:       ",";

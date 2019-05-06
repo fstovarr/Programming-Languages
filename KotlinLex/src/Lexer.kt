@@ -1,7 +1,6 @@
 import java.io.File
 import java.lang.Exception
-import java.math.BigInteger
-import java.util.concurrent.locks.Condition
+import java.lang.StringBuilder
 
 class Lexer {
     private val rules: HashMap<String, TokenRule> by lazy {
@@ -11,129 +10,219 @@ class Lexer {
     }
 
     val tokens = ArrayList<Token>()
-
-    private fun tokenize(word: String): Token? {
-        rules.forEach {
-            //    if (it.regex.matches(word))
-            //        return Token(it.name, word, 0, 0)
-        }
-        return null
-    }
+    var error: LexicalError? = null
 
     fun analyze(file: File) {
         val textReader = TextReader(file.inputStream())
         var actualChar: Char
 
         while (textReader.hasChars()) {
+            val row = textReader.row
+            val col = textReader.col
+
             actualChar = textReader.next()
-            when {
-                actualChar == '"' -> readString(textReader)
-                "[a-zA-Zñ_]".toRegex().matches(actualChar.toString()) -> readWord(textReader, actualChar)
-                else -> {
-                    readOtherCharacters(textReader, actualChar)
-                }
-            }
+
+            if (actualChar == '\n' || actualChar == ' ' || actualChar == '\t') continue
+
+            if (actualChar == '"' && readString(textReader)) continue
+
+            if ("[a-zA-Zñ_]".toRegex() matches actualChar.toString()
+                && readWord(textReader, actualChar)
+            ) continue
+
+            if ("[+0-9-]".toRegex() matches actualChar.toString() &&
+                readNumber(textReader, actualChar)
+            ) continue
+
+            if (readOtherCharacters(textReader, actualChar)) continue
+
+            error = LexicalError(row, col)
+            return
         }
     }
 
-    private fun readOtherCharacters(textReader: TextReader, actualChar: Char) {
+    private fun readOtherCharacters(textReader: TextReader, actualChar: Char): Boolean {
         val row = textReader.row
         val col = textReader.col
+        var nextChar = textReader.next()
+
+        if (actualChar == '/')
+            when (nextChar) {
+                '*' -> {
+                    do {
+                        readUntil(textReader, '*', initial = '*')
+                        nextChar = textReader.next()
+                    } while (nextChar != '/')
+                    return (nextChar == '/')
+                }
+                '/' -> {
+                    readUntil(textReader, '\n', initial = '/')
+                    return true
+                }
+            }
 
         rules.keys.forEach {
             if (it !in arrayOf("reserved", "id", "number")) {
-                if (rules[it]!!.regex.matches(actualChar.toString())){
+                if (rules[it]!!.regex.matches(actualChar.toString() + nextChar.toString())) {
                     tokens += Token(rules[it]!!.name, row, col)
-                    return@forEach
+                    return true
                 }
             }
         }
+
+        textReader.push(nextChar)
+
+        rules.keys.forEach {
+            if (it !in arrayOf("reserved", "id", "number")) {
+                if (rules[it]!!.regex.matches(actualChar.toString())) {
+                    tokens += Token(rules[it]!!.name, row, col)
+                    return true
+                }
+            }
+        }
+
+        return false
     }
 
-    private fun readWord(textReader: TextReader, initial: Char) {
+    private fun readNumber(textReader: TextReader, initial: Char): Boolean {
         val row = textReader.row
         val col = textReader.col
-        val string = readWhile(textReader, initial, "[a-zA-Z0-9_ñ]+".toRegex())
 
-        if (!string.isNullOrEmpty())
+        val integer = initial + readWhile(textReader, initial, "[+-]?[0-9]+".toRegex())
+
+        if (integer.isEmpty() || !("[+-]?[0-9]+".toRegex() matches integer)) {
+            return false
+        }
+        var decimal = ""
+        val char = textReader.next()
+
+        if (char == '.') {
+            decimal = char + readWhile(textReader, char, "\\.[0-9]+".toRegex())
+            if (decimal.isEmpty())
+                return false
+        } else
+            textReader.push(char)
+
+        val string = integer + decimal
+
+        if (string.isNotEmpty() || rules["number"]!!.regex matches string) {
+            tokens += Token("tk_number", string, row, col)
+            return true
+        }
+
+        return false
+    }
+
+    private fun readWord(textReader: TextReader, initial: Char): Boolean {
+        val row = textReader.row
+        val col = textReader.col
+        val string = initial + readWhile(textReader, initial, "[a-zA-Z0-9_ñ]+".toRegex())
+
+        if (string.isNotEmpty())
             when {
-                rules["reserved"]!!.regex matches string ->
+                rules["reserved"]!!.regex matches string -> {
                     tokens += Token(string, row, col)
-                rules["id"]!!.regex matches string ->
+                    return true
+                }
+                rules["id"]!!.regex matches string -> {
                     tokens += Token(rules["id"]!!.name, string, row, col)
+                    return true
+                }
             }
+        return false
     }
 
     private fun readWhile(
         textReader: TextReader,
         initialChar: Char,
-        regex: Regex,
-        ignoreSpaces: Boolean = false
-    ): String? {
-        val row = textReader.row
-        val col = textReader.col
+        regex: Regex
+    ): String = buildString {
+        var actualChar: Char = initialChar
 
-        return buildString {
-            append(initialChar)
-            var actualChar: Char = textReader.next()
-            append(actualChar)
-
-            while (textReader.hasChars()) {
-                actualChar = textReader.next()
-                if (!(regex matches this.toString() + actualChar)) break
-                append(actualChar)
+        while (textReader.hasChars()) {
+            actualChar = textReader.next()
+            if (!(regex matches initialChar + this.toString() + actualChar)) {
+                break
             }
-            // if (!(regex matches this.toString())) throw LexicalError(row, col)
+            append(actualChar)
         }
+
+        if (!(regex matches initialChar + this.toString()))
+            resetString(this.append(actualChar), textReader)
+        else
+            textReader.push(actualChar)
     }
 
     private fun readUntil(
-        textReader: TextReader, vararg limitChars: Char,
-        ignoreSpaces: Boolean = false,
-        maxChars: Int? = null
-    ): String? {
-        val row = textReader.row
-        val col = textReader.col
-        var counter = 10000
+        textReader: TextReader,
+        vararg limitChars: Char,
+        prohibitedChar: Char? = null,
+        maxChars: Int? = null,
+        initial: Char
+    ): String {
+        var counter = 1
 
         return buildString {
+            // append(initial)
             var actualChar: Char = textReader.next()
+            if (actualChar == prohibitedChar) {
+                resetString(this, textReader)
+                return@buildString
+            }
+
             append(actualChar)
             counter++
 
             while (textReader.hasChars() && actualChar !in limitChars) {
                 if (maxChars != null && counter++ <= maxChars) break
                 actualChar = textReader.next()
+                if (actualChar == prohibitedChar) {
+                    resetString(this, textReader)
+                    return@buildString
+                }
                 append(actualChar)
             }
-            if (actualChar !in limitChars) throw LexicalError(row, col)
+
+            if (actualChar !in limitChars)
+                resetString(this, textReader)
         }
     }
 
-    private fun readNumber(textReader: TextReader, initial: Char) {
-        val string = buildString {
-            append(initial)
+    private fun resetString(stringBuilder: StringBuilder, textReader: TextReader) {
+        stringBuilder.forEach {
+            textReader.push(it)
         }
+        stringBuilder.setLength(0)
     }
 
-    private fun readString(textReader: TextReader) {
+    private fun readString(textReader: TextReader, initial: Char = '"'): Boolean {
         val row = textReader.row
         val col = textReader.col
-        val string = readUntil(textReader, '"')
+        val string: String = readUntil(
+            textReader, '"', prohibitedChar = '\n', maxChars = null,
+            initial = initial
+        )
 
-        if (!string.isNullOrEmpty())
-            tokens += Token("tk_string", "\"$string", row, col)
+        if (string.isEmpty())
+            return false
+        else {
+            tokens += Token("tk_string", initial + string, row, col)
+            return true
+        }
     }
 }
 
 class LexicalError(val row: Int, val col: Int, message: String = "") : Error(message) {
-    override fun toString() = ">>> Lexical error: (row: $row, col: $col) | $message"
+    override fun toString() = ">>> Lexical error: (row: $row, col: $col) $message"
 }
 
 fun main() {
     val lexer = Lexer()
-    lexer.analyze(File("src/slexample.txt"))
+    lexer.analyze(File("src/samples/s5.txt"))
     lexer.tokens.forEach {
         println(it)
     }
+
+    if (lexer.error != null)
+        println(lexer.error)
 }

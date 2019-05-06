@@ -1,3 +1,8 @@
+// Comentario
+/*
+Otro Comentario
+*/
+
 var
     n, suma, k : numerico
 
