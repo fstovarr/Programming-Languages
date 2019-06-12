@@ -1,9 +1,11 @@
-reserved: "and|archivo|caso|const|constantes|desde|eval|fin|hasta|inicio|
-    imprimir|leer|lib|libext|matriz|mientras|not|numerico|or|paso|subrutina|
+reserved: "and|archivo|caso|cadena|const|constantes|desde|eval|fin|hasta|inicio|
+    imprimir|leer|lib|libext|logico|matriz|mientras|not|numerico|or|paso|subrutina|
     programa|ref|registro|repetir|retorna|si|sin|sino|tipos|var|variables|vector";
 
+tk_boolean: "TRUE|FALSE|SI|NO";
+
 id: "[A-Za-zñÑ_](?:\w|ñ|Ñ|_){0,31}";
-number: "[+-]?[0-9]+(?:.[0-9]+)?";
+number: "[+-]?[0-9]+(?:.[0-9]+[eE][+-][0-9]+)?";
 
 tk_assig:       "=";
 tk_plus:        "\+";

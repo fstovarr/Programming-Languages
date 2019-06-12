@@ -1,6 +1,4 @@
 import java.io.File
-import java.lang.Exception
-import java.lang.StringBuilder
 
 class Lexer {
     private val rules: HashMap<String, TokenRule> by lazy {
@@ -94,7 +92,7 @@ class Lexer {
             return false
         }
         var decimal = ""
-        val char = textReader.next()
+        var char = textReader.next()
 
         if (char == '.') {
             decimal = char + readWhile(textReader, char, "\\.[0-9]+".toRegex())
@@ -103,7 +101,21 @@ class Lexer {
         } else
             textReader.push(char)
 
-        val string = integer + decimal
+        var exponent = ""
+        char = textReader.next()
+
+        if (char == 'e' || char == 'E') {
+            exponent += char.toString()
+            char = textReader.next()
+            if (!char.isDigit() || char != '+' || char != '-')
+                return false
+            exponent = char + readWhile(textReader, char, "[0-9]+".toRegex())
+            if (exponent.isEmpty())
+                return false
+        } else
+            textReader.push(char)
+
+        val string = integer + decimal + exponent
 
         if (string.isNotEmpty() || rules["number"]!!.regex matches string) {
             tokens += Token("tk_number", string, row, col)
@@ -124,6 +136,10 @@ class Lexer {
                     tokens += Token(string, row, col)
                     return true
                 }
+                rules["tk_boolean"]!!.regex matches string -> {
+                    tokens += Token(rules["tk_boolean"]!!.name, string, row, col)
+                    return true
+                }
                 rules["id"]!!.regex matches string -> {
                     tokens += Token(rules["id"]!!.name, string, row, col)
                     return true
@@ -141,7 +157,8 @@ class Lexer {
 
         while (textReader.hasChars()) {
             actualChar = textReader.next()
-            if (!(regex matches initialChar + this.toString() + actualChar)) {
+            val string = initialChar + this.toString() + actualChar
+            if (!(regex matches string)) {
                 break
             }
             append(actualChar)
